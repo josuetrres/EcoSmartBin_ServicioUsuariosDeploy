@@ -26,18 +26,17 @@ jobs:
           tenant-id: ${{ secrets.USERSERVICE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.USERSERVICE_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
       - name: Instalar extensión de Azure Container App
         run: |
           az extension add --name containerapp --upgrade --yes
 
-      - name: Desplegar directamente usando el código fuente limpio
+      - name: Compilar imagen con Docker local de GitHub
         run: |
-          az containerapp up \
+          docker build -t user-service-local:${{ github.sha }} .
+
+      - name: Desplegar la imagen directo a la Container App
+        run: |
+          az containerapp container image set \
             --name user-service \
             --resource-group ecosmart \
-            --source . \
-            --ingress external \
-            --target-port 8000
+            --image user-service-local:${{ github.sha }}
