@@ -19,6 +19,20 @@ jobs:
       - name: Checkout to the branch
         uses: actions/checkout@v3
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: 🐳 Compilar y subir a Docker Hub
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          # REEMPLAZA "TU_USUARIO_DOCKER" con tu usuario real
+          tags: TU_USUARIO_DOCKER/user-service:latest
+
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -30,13 +44,9 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade --yes
 
-      - name: Compilar imagen con Docker local de GitHub
+      - name: 🚀 Obligar a Azure a actualizar la imagen limpia
         run: |
-          docker build -t user-service-local:${{ github.sha }} .
-
-      - name: Desplegar la imagen directo a la Container App
-        run: |
-          az containerapp container image set \
+          az containerapp update \
             --name user-service \
             --resource-group ecosmart \
-            --image user-service-local:${{ github.sha }}
+            --image josutrres/user-service:latest
