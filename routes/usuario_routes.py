@@ -26,16 +26,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     )
     try:
         # Validamos usando la firma simétrica compartida
-        payload = jwt.decode(
-            token, 
-            settings.SUPABASE_JWT_SECRET, 
-            algorithms=["ES256"], 
-            audience="authenticated"
-        )
-        user_id: str = payload.get("sub")
-        email: str = payload.get("email")
+        user_response = supabase.auth.get_user(token) 
+        user = user_response.user 
         
-        user_metadata = payload.get("user_metadata", {})
+        user_id: str = user.id
+        email: str = user.email
+        
+        user_metadata = user.user_metadata
         role: str = user_metadata.get("role", "user")
         
         if user_id is None:
