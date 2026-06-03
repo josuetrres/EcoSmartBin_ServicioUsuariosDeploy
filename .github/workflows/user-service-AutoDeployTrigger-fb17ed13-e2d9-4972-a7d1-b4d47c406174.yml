@@ -48,12 +48,17 @@ jobs:
         run: |
           az extension add --name containerapp --upgrade --yes
 
-      - name: 🚀 Obligar a Azure a actualizar la imagen limpia
+      - name: 🚀 Configurar credenciales y actualizar imagen en Azure
         run: |
+          
+          az containerapp registry set \
+            --name user-service \
+            --resource-group ecosmart \
+            --server docker.io \
+            --username "${{ secrets.DOCKER_USERNAME }}" \
+            --password "${{ secrets.DOCKER_PASSWORD }}"
+
           az containerapp update \
             --name user-service \
             --resource-group ecosmart \
-            --image docker.io/josutrres/user-service:latest \
-            --registry-username "${{ secrets.DOCKER_USERNAME }}" \
-            --registry-password "${{ secrets.DOCKER_PASSWORD }}" \
-            --registry-server docker.io
+            --image docker.io/josutrres/user-service:latest
