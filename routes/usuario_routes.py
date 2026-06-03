@@ -29,7 +29,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         payload = jwt.decode(
             token, 
             settings.SUPABASE_JWT_SECRET, 
-            algorithms=["HS256"], 
+            algorithms=["ES256"], 
             audience="authenticated"
         )
         user_id: str = payload.get("sub")
