@@ -8,7 +8,6 @@ on:
       [ main ]
     paths:
     - '**'
-    - '.github/workflows/user-service-AutoDeployTrigger-fb17ed13-e2d9-4972-a7d1-b4d47c406174.yml'
 
   # Allow manual trigger 
   workflow_dispatch:      
@@ -31,19 +30,10 @@ jobs:
           tenant-id: ${{ secrets.USERSERVICE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.USERSERVICE_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push container image to registry
+      - name: Build and deploy Container App
         uses: azure/container-apps-deploy-action@v2
         with:
           appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
-          registryUrl: 
-          registryUsername: ${{ secrets.USERSERVICE_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.USERSERVICE_REGISTRY_PASSWORD }}
           containerAppName: user-service
           resourceGroup: ecosmart
-          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
-
-
+          imageToBuild: user-service:${{ github.sha }}
