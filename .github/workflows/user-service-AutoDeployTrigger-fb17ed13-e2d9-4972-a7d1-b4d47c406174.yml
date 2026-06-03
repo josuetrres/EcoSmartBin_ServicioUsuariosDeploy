@@ -53,4 +53,7 @@ jobs:
           az containerapp update \
             --name user-service \
             --resource-group ecosmart \
-            --image docker.io/josutrres/user-service:latest
+            --image docker.io/josutrres/user-service:latest \
+            --registry-username "${{ secrets.DOCKER_USERNAME }}" \
+            --registry-password "${{ secrets.DOCKER_PASSWORD }}" \
+            --registry-server docker.io
