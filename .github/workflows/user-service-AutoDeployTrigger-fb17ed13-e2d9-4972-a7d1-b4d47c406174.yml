@@ -1,27 +1,23 @@
 name: Trigger auto deployment for user-service
 
-# When this action will be executed
 on:
-  # Automatically trigger it when detected changes in repo
   push:
     branches: 
       [ main ]
     paths:
     - '**'
-
-  # Allow manual trigger 
   workflow_dispatch:      
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+      id-token: write
+      contents: read
 
     steps:
       - name: Checkout to the branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Azure Login
         uses: azure/login@v2
@@ -30,10 +26,18 @@ jobs:
           tenant-id: ${{ secrets.USERSERVICE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.USERSERVICE_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and deploy Container App
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ${{ github.workspace }}
-          containerAppName: user-service
-          resourceGroup: ecosmart
-          imageToBuild: user-service:${{ github.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Instalar extensión de Azure Container App
+        run: |
+          az extension add --name containerapp --upgrade --yes
+
+      - name: Desplegar directamente usando el código fuente limpio
+        run: |
+          az containerapp up \
+            --name user-service \
+            --resource-group ecosmart \
+            --source . \
+            --ingress external \
+            --target-port 8000
