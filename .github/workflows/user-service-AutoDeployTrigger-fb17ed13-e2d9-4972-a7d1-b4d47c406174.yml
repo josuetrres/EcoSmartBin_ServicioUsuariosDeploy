@@ -33,9 +33,9 @@ jobs:
         with:
           context: .
           push: true
-          # REEMPLAZA "TU_USUARIO_DOCKER" con tu usuario real
           tags: josutrres/user-service:latest
           provenance: false
+          no-cache: true # 👈 Esto obliga a Docker Hub a aceptar todas las capas desde cero sin bugearse
 
       - name: Azure Login
         uses: azure/login@v2
@@ -50,7 +50,7 @@ jobs:
 
       - name: 🚀 Configurar credenciales y actualizar imagen en Azure
         run: |
-          
+          # 1. Registrar las credenciales de Docker Hub de forma segura en Azure para saltar el límite 429
           az containerapp registry set \
             --name user-service \
             --resource-group ecosmart \
@@ -58,6 +58,7 @@ jobs:
             --username "${{ secrets.DOCKER_USERNAME }}" \
             --password "${{ secrets.DOCKER_PASSWORD }}"
 
+          # 2. Actualizar la Container App con la ruta explícita
           az containerapp update \
             --name user-service \
             --resource-group ecosmart \
