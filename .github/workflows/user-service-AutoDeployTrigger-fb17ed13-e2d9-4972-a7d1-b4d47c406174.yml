@@ -49,4 +49,5 @@ jobs:
           az containerapp update \
             --name user-service \
             --resource-group ecosmart \
-            --image josutrres/user-service:latest
+            --image docker.io/josutrres/user-service:latest \
+            --registry-server docker.io
