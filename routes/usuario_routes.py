@@ -24,22 +24,51 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
         detail="Token inválido, alterado o expirado.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    
+    # 1. Intentamos validar el JWT localmente usando la firma simétrica compartida.
+    # Esto es más rápido, no consume cuota de red de Supabase y lee la clave secreta directamente.
+    if settings.SUPABASE_JWT_SECRET:
+        try:
+            payload = jwt.decode(
+                token,
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                options={"verify_aud": False}
+            )
+            user_id: str = payload.get("sub")
+            email: str = payload.get("email")
+            
+            # El rol del usuario suele guardarse en 'role' o dentro de 'user_metadata' en el JWT
+            user_metadata = payload.get("user_metadata", {})
+            role: str = user_metadata.get("role", payload.get("role", "user"))
+            
+            if user_id:
+                return {"user_id": user_id, "email": email, "role": role}
+        except JWTError:
+            # Si jose determina que el token es inválido/alterado/expirado, lanzamos 401
+            raise credentials_exception
+        except Exception:
+            # Si ocurre otro error inesperado en la decodificación local, intentamos fallback
+            pass
+
+    # 2. Fallback: Si no hay secreto configurado o falla la decodificación local por otros motivos,
+    # validamos llamando a la API de Supabase Auth
     try:
-        # Validamos usando la firma simétrica compartida
-        user_response = supabase.auth.get_user(token) 
-        user = user_response.user 
+        user_response = supabase.auth.get_user(token)
+        user = user_response.user
         
         user_id: str = user.id
         email: str = user.email
         
         user_metadata = user.user_metadata
-        role: str = user_metadata.get("role", "user")
+        role: str = user_metadata.get("role", "user") if user_metadata else "user"
         
         if user_id is None:
             raise credentials_exception
             
         return {"user_id": user_id, "email": email, "role": role}
-    except JWTError:
+    except Exception:
+        # Capturamos AuthApiError y cualquier otra excepción para responder con 401
         raise credentials_exception
 
 
@@ -149,20 +178,27 @@ def get_my_profile(current_user: dict = Depends(get_current_user), db: Session =
     """
     Trae la información combinada del JWT y los datos guardados en la tabla perfiles.
     """
-    perfil = db.query(PerfilUsuario).filter(PerfilUsuario.id == current_user["user_id"]).first()
-    if not perfil:
-        raise HTTPException(status_code=404, detail="Perfil no encontrado en la base de datos.")
-    
-    return {
-        "user_id": perfil.id,
-        "email": perfil.email,
-        "nombres": perfil.nombres,
-        "apellidos": perfil.apellidos,
-        "cedula": perfil.cedula,
-        "tipo_usuario": perfil.tipo_usuario,
-        "facultad": perfil.facultad,
-        "role": perfil.role,
-        "puntos_ecologicos": perfil.puntos_ecologicos,
-        "is_active": perfil.is_active,
-        "created_at": perfil.created_at
-    }
+    print(f"DEBUG BACKEND: get_my_profile convocado para usuario: {current_user}")
+    try:
+        perfil = db.query(PerfilUsuario).filter(PerfilUsuario.id == current_user["user_id"]).first()
+        if not perfil:
+            print(f"DEBUG BACKEND: No se encontró perfil en PostgreSQL para el ID: {current_user['user_id']}")
+            raise HTTPException(status_code=404, detail="Perfil no encontrado en la base de datos.")
+        
+        print(f"DEBUG BACKEND: Perfil encontrado en base de datos: {perfil}")
+        return {
+            "user_id": perfil.id,
+            "email": perfil.email,
+            "nombres": perfil.nombres,
+            "apellidos": perfil.apellidos,
+            "cedula": perfil.cedula,
+            "tipo_usuario": perfil.tipo_usuario,
+            "facultad": perfil.facultad,
+            "role": perfil.role,
+            "puntos_ecologicos": perfil.puntos_ecologicos,
+            "is_active": perfil.is_active,
+            "created_at": perfil.created_at
+        }
+    except Exception as e:
+        print(f"DEBUG BACKEND: Error en get_my_profile: {str(e)}")
+        raise e
