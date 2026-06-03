@@ -1,0 +1,171 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+from supabase import create_client, Client
+from jose import jwt, JWTError
+from schemas.usuario_schemas import UserRegisterSchema, UserLoginSchema
+from models.usuario_model import PerfilUsuario 
+from database import get_db
+from settings import settings
+
+supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+
+router = APIRouter(
+    prefix="/auth",
+    tags=["Autenticación y Usuarios"]
+)
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token inválido, alterado o expirado.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        # Validamos usando la firma simétrica compartida
+        payload = jwt.decode(
+            token, 
+            settings.SUPABASE_JWT_SECRET, 
+            algorithms=["HS256"], 
+            audience="authenticated"
+        )
+        user_id: str = payload.get("sub")
+        email: str = payload.get("email")
+        
+        user_metadata = payload.get("user_metadata", {})
+        role: str = user_metadata.get("role", "user")
+        
+        if user_id is None:
+            raise credentials_exception
+            
+        return {"user_id": user_id, "email": email, "role": role}
+    except JWTError:
+        raise credentials_exception
+
+
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+def register_user(user_data: UserRegisterSchema, db: Session = Depends(get_db)):
+    """
+    Registra al usuario en Supabase Auth y crea en paralelo su perfil 
+    detallado en la base de datos PostgreSQL de Supabase usando SQLAlchemy.
+    """
+    try:
+        # 1. Verificar si la cédula o el correo ya existen en nuestra base de datos local
+        usuario_existente = db.query(PerfilUsuario).filter(
+            (PerfilUsuario.cedula == user_data.cedula) | (PerfilUsuario.email == user_data.email)
+        ).first()
+        if usuario_existente:
+            if usuario_existente.cedula == user_data.cedula:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La cédula ingresada ya se encuentra registrada."
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El correo electrónico ingresado ya se encuentra registrado."
+                )
+
+        # 2. Registrar las credenciales en Supabase Auth
+        supabase_response = supabase.auth.sign_up({
+            "email": user_data.email,
+            "password": user_data.password,
+            "options": {
+                "data": {
+                    "role": "user"
+                }
+            }
+        })
+        
+        # Extraemos el ID único generado por Supabase para mapearlo
+        supabase_uid = supabase_response.user.id
+
+
+        nuevo_perfil = PerfilUsuario(
+            id=supabase_uid,
+            email=user_data.email,
+            nombres=user_data.nombres,
+            apellidos=user_data.apellidos,
+            cedula=user_data.cedula,
+            tipo_usuario=user_data.tipo_usuario,
+            facultad=user_data.facultad,
+            role="user"
+        )
+        
+        db.add(nuevo_perfil)
+        db.commit()
+        db.refresh(nuevo_perfil)
+
+        return {
+            "message": "Usuario y perfil creados exitosamente en el ecosistema EcoSmartBin.",
+            "user_id": nuevo_perfil.id,
+            "nombres": nuevo_perfil.nombres,
+            "email": nuevo_perfil.email
+        }
+
+    except HTTPException as http_ex:
+        # Re-lanzar excepciones HTTP controladas por nosotros (ej: Cédula duplicada)
+        raise http_ex
+    except Exception as e:
+        db.rollback()  # Si algo falló en la BD relacional, cancelamos la transacción
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error en el proceso de registro: {str(e)}"
+        )
+
+
+@router.post("/login")
+def login_user(user_data: UserLoginSchema):
+    """
+    Autentica al usuario en Supabase y le entrega su JWT Token para la App.
+    """
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": user_data.email,
+            "password": user_data.password
+        })
+        
+        return {
+            "access_token": response.session.access_token,
+            "token_type": "bearer",
+            "refresh_token": response.session.refresh_token,
+            "user": {
+                "id": response.user.id,
+                "email": response.user.email,
+                "role": response.user.user_metadata.get("role", "user")
+            }
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales incorrectas o cuenta no verificada."
+        )
+
+
+@router.get("/me")
+def get_my_profile(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Trae la información combinada del JWT y los datos guardados en la tabla perfiles.
+    """
+    perfil = db.query(PerfilUsuario).filter(PerfilUsuario.id == current_user["user_id"]).first()
+    if not perfil:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado en la base de datos.")
+    
+    return {
+        "user_id": perfil.id,
+        "email": perfil.email,
+        "nombres": perfil.nombres,
+        "apellidos": perfil.apellidos,
+        "cedula": perfil.cedula,
+        "tipo_usuario": perfil.tipo_usuario,
+        "facultad": perfil.facultad,
+        "role": perfil.role,
+        "puntos_ecologicos": perfil.puntos_ecologicos,
+        "is_active": perfil.is_active,
+        "created_at": perfil.created_at
+    }
